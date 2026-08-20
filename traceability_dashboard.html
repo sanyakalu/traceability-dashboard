@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Traceability Matrix</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="traceability_dashboard.css">
+</head>
+<body>
+<div class="layout">
+
+  <!-- ── Header ── -->
+  <header class="app-header">
+    <h1>Traceability Matrix</h1>
+    <label class="upload-btn" for="csv-input">&#128194; Load CSV</label>
+    <input type="file" id="csv-input" accept=".csv">
+    <span id="file-label">No file loaded</span>
+    <div class="header-right">
+      <button class="tmpl-btn" id="btn-tmpl">&#128196; Template</button>
+      <input type="file" id="tmpl-input" accept=".docx">
+      <button class="export-btn" id="btn-export" disabled>&#128196; Export DOCX</button>
+    </div>
+  </header>
+
+  <!-- ── Filter bar ── -->
+  <div class="filter-bar">
+    <span class="filter-label">Filter</span>
+
+    <select id="f-fs"><option value="">Feature Spec (all)</option></select>
+
+    <div class="pv-wrap">
+      <button type="button" class="pv-btn" id="pv-btn">PIC Vers (all) &#9660;</button>
+      <div class="pv-panel" id="pv-panel"></div>
+    </div>
+
+    <select id="f-pt">
+      <option value="">Plan Tags (all)</option>
+      <option value="trace matrix">trace matrix</option>
+      <option value="no test monitor">no test monitor</option>
+    </select>
+
+    <select id="f-lr">
+      <option value="">Result (all)</option>
+      <option value="Passed">Passed</option>
+      <option value="Failed">Failed</option>
+      <option value="None">None</option>
+    </select>
+
+    <div class="vr"></div>
+    <span class="filter-label" style="font-size:9px;color:var(--muted)">ID search</span>
+
+    <input type="text" id="f-ri" placeholder="Requirement ID" style="width:120px">
+    <input type="text" id="f-tc" placeholder="Test Case ID"   style="width:105px">
+    <input type="text" id="f-pi" placeholder="Test Plan ID"   style="width:90px">
+    <input type="text" id="f-si" placeholder="Test Suite ID"  style="width:90px">
+
+    <div class="vr"></div>
+    <label class="filter-toggle" title="Within each Risk + PIC Version group, keep only the most recent passing test case per unique TC">
+      <input type="checkbox" id="f-latest">
+      Latest TC only
+    </label>
+    <label class="filter-toggle" title="Only show rows that have a linked Risk">
+      <input type="checkbox" id="f-has-risk">
+      Has Risk
+    </label>
+    <label class="filter-toggle" title="Only show rows that have a linked STICR">
+      <input type="checkbox" id="f-has-sticr">
+      Has STICR
+    </label>
+
+    <div class="vr"></div>
+    <span id="result-count"></span>
+    <button class="btn-clear" id="btn-clear">&#10005; Clear</button>
+  </div>
+
+  <!-- ── Table ── -->
+  <div class="table-wrap">
+    <div id="tbl-host">
+      <div class="empty">
+        <div class="empty-icon">&#128203;</div>
+        <p>Load <strong>traceability_matrix_alarm_panel.csv</strong> using the button above,<br>
+           or place it in the same folder — it loads automatically.</p>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="traceability_dashboard.js"></script>
+</body>
+</html>
