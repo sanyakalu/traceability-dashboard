@@ -45,7 +45,7 @@ conn = snowflake.connector.connect(
 )
 
 cur = conn.cursor()
-cur.execute('SELECT * FROM TRACEABILITY_MATRIX_WEB_AND_ALARM_PANEL')
+cur.execute('SELECT * FROM TRACEABILITY_MATRIX')
 cols = [COLUMN_MAP[d[0]] for d in cur.description]
 
 rows = []
