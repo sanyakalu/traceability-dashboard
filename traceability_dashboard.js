@@ -564,7 +564,17 @@ $('btn-export').addEventListener('click', exportDocx);
 
 // ── Startup ───────────────────────────────────────────────────────────────────
 tryAutoLoadTemplate();
-fetch('traceability_matrix_alarm_panel.csv')
-  .then(r => r.ok ? r.blob() : Promise.reject())
-  .then(b => loadCsv(new File([b], 'traceability_matrix_alarm_panel.csv', { type: 'text/csv' })))
-  .catch(() => {});
+fetch('data.json')
+  .then(r => r.ok ? r.json() : Promise.reject())
+  .then(data => {
+    ALL = data;
+    $('file-label').textContent = `Snowflake  ·  ${ALL.length.toLocaleString()} rows`;
+    populateOptions();
+    render();
+  })
+  .catch(() => {
+    fetch('traceability_matrix_alarm_panel.csv')
+      .then(r => r.ok ? r.blob() : Promise.reject())
+      .then(b => loadCsv(new File([b], 'traceability_matrix_alarm_panel.csv', { type: 'text/csv' })))
+      .catch(() => {});
+  });
