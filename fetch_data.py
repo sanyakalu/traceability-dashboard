@@ -50,7 +50,7 @@ cols = [COLUMN_MAP[d[0]] for d in cur.description]
 
 rows = []
 for row in cur:
-    obj = {col: str(val) for col, val in zip(cols, row) if val is not None and val != ''}
+    obj = {col: '' if val is None else str(val) for col, val in zip(cols, row)}
     rows.append(obj)
 
 cur.close()
