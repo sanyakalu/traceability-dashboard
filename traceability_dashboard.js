@@ -160,10 +160,8 @@ function bestInCluster(rows) {
   });
 }
 
-// Within each (Req ID + Released in + Reqmt for Version + Risk ID) group:
-//   1. Rows with the same TC ID are treated as the same test case.
-//   2. Rows with different TC IDs but identical TC Name are treated as the same test case.
-//   3. From each cluster keep the most recent Passed row (fallback: most recent).
+// Within each (Req ID + Released in + Reqmt for Version) group, cluster TCs by ID/name,
+// pick the best test run per cluster, and keep ALL risk-association rows for that run.
 function dedupeLatestTC(data) {
   const groups = new Map();
   for (const row of data) {
@@ -171,7 +169,6 @@ function dedupeLatestTC(data) {
       val(row, 'Requirement ID'),
       val(row, 'Released in'),
       val(row, 'Reqmt for Version'),
-      val(row, 'Risk ID'),
     ].join('|||');
     if (!groups.has(k)) groups.set(k, []);
     groups.get(k).push(row);
@@ -181,7 +178,6 @@ function dedupeLatestTC(data) {
   for (const rows of groups.values()) {
     if (rows.length === 1) { result.push(rows[0]); continue; }
 
-    // Greedy clustering: seed each cluster from the first unassigned row.
     const assigned = new Array(rows.length).fill(false);
     for (let i = 0; i < rows.length; i++) {
       if (assigned[i]) continue;
@@ -194,13 +190,21 @@ function dedupeLatestTC(data) {
         if (assigned[j]) continue;
         const sameId   = seedId && seedId === val(rows[j], 'Test Case ID');
         const sameName = !sameId && seedName !== '' && seedName === val(rows[j], 'Test Case Name');
-        if (sameId || sameName) {
-          cluster.push(rows[j]);
-          assigned[j] = true;
-        }
+        if (sameId || sameName) { cluster.push(rows[j]); assigned[j] = true; }
       }
 
-      result.push(bestInCluster(cluster));
+      // Find the best result, then keep every row that shares that exact test run
+      // so all risk associations for the winning run are preserved.
+      const best       = bestInCluster(cluster);
+      const bestRunKey = [
+        val(best, 'Test Plan ID'), val(best, 'Test Suite ID'),
+        val(best, 'Test Result'),  val(best, 'Test Result Date'),
+      ].join('|||');
+      const winners = cluster.filter(r =>
+        [val(r, 'Test Plan ID'), val(r, 'Test Suite ID'),
+         val(r, 'Test Result'),  val(r, 'Test Result Date')].join('|||') === bestRunKey
+      );
+      result.push(...(winners.length ? winners : [best]));
     }
   }
 
@@ -210,7 +214,7 @@ function dedupeLatestTC(data) {
 // ── Grouping ──────────────────────────────────────────────────────────────────
 function buildGroups(data) {
   const sorted = [...data].sort((a, b) => {
-    for (const k of ['Requirement ID', 'Released in', 'Reqmt for Version', 'Risk ID', 'Test Case ID', 'Test Point ID', 'STICR ID']) {
+    for (const k of ['Requirement ID', 'Released in', 'Reqmt for Version', 'Test Case ID', 'Test Point ID', 'Test Result Date']) {
       const c = String(val(a, k) || '').localeCompare(String(val(b, k) || ''), undefined, { numeric: true });
       if (c !== 0) return c;
     }
@@ -221,13 +225,42 @@ function buildGroups(data) {
   for (const row of sorted) {
     const r1k = `${val(row, 'Requirement ID')}|||${val(row, 'Released in')}`;
     const vk  = val(row, 'Reqmt for Version') || '';
-    const rk  = val(row, 'Risk ID') || '';
+    const tck = val(row, 'Test Case ID') || val(row, 'Test Case Name') || '';
+
     if (!r1Map.has(r1k)) { r1Map.set(r1k, { vMap: new Map(), vOrder: [] }); r1Order.push(r1k); }
     const r1 = r1Map.get(r1k);
-    if (!r1.vMap.has(vk)) { r1.vMap.set(vk, { rkMap: new Map(), rkOrder: [] }); r1.vOrder.push(vk); }
+    if (!r1.vMap.has(vk)) { r1.vMap.set(vk, { tcMap: new Map(), tcOrder: [] }); r1.vOrder.push(vk); }
     const v = r1.vMap.get(vk);
-    if (!v.rkMap.has(rk)) { v.rkMap.set(rk, []); v.rkOrder.push(rk); }
-    v.rkMap.get(rk).push(row);
+    if (!v.tcMap.has(tck)) {
+      v.tcMap.set(tck, { resultMap: new Map(), resultOrder: [], risks: [], sticrs: [] });
+      v.tcOrder.push(tck);
+    }
+    const tcGroup = v.tcMap.get(tck);
+
+    // Unique test run: Plan + Suite + Result + Date
+    const resultKey = [
+      val(row, 'Test Plan ID'), val(row, 'Test Suite ID'),
+      val(row, 'Test Result'),  val(row, 'Test Result Date'),
+    ].join('|||');
+    if (!tcGroup.resultMap.has(resultKey)) {
+      tcGroup.resultMap.set(resultKey, row);
+      tcGroup.resultOrder.push(resultKey);
+    }
+
+    // Collect unique risks for this TC
+    const riskId = val(row, 'Risk ID');
+    if (riskId && !tcGroup.risks.some(r => r.id === riskId)) {
+      tcGroup.risks.push({ id: riskId, name: val(row, 'Risk Name'), url: val(row, 'Risk URL') });
+    }
+
+    // Collect unique STICRs for this TC
+    const sticrId = val(row, 'STICR ID');
+    if (sticrId && !tcGroup.sticrs.some(s => s.id === sticrId)) {
+      tcGroup.sticrs.push({
+        id: sticrId, name: val(row, 'STICR Name'), url: val(row, 'STICR URL'),
+        state: val(row, 'STICR State'), release: val(row, 'STICR Release'),
+      });
+    }
   }
   return { r1Map, r1Order };
 }
@@ -316,38 +349,50 @@ function render() {
   const hasProp = k => Object.prototype.hasOwnProperty.call(sample, k);
   const visCols = COLS.filter(c => hasProp(c.key));
 
-  const reqCols   = visCols.filter(c => c.level === 'req');
-  const versCols  = visCols.filter(c => c.level === 'vers');
-  const tcCols    = visCols.filter(c => c.level === 'leaf' && c.group !== 'sticr');
-  const riskCols  = visCols.filter(c => c.level === 'risk');
-  const sticrCols = visCols.filter(c => c.level === 'leaf' && c.group === 'sticr');
+  const reqCols      = visCols.filter(c => c.level === 'req');
+  const versCols     = visCols.filter(c => c.level === 'vers');
+  const tcCols       = visCols.filter(c => c.level === 'leaf' && c.group === 'tc');
+  const hasRiskData  = visCols.some(c => c.group === 'risk');
+  const hasSticrData = visCols.some(c => c.group === 'sticr');
 
-  $('result-count').textContent = `${data.length.toLocaleString()} rows`;
+  const { r1Map, r1Order } = buildGroups(data);
+
+  // Count unique result rows for the counter
+  let resultRowCount = 0;
+  for (const r1k of r1Order) {
+    const r1 = r1Map.get(r1k);
+    for (const vk of r1.vOrder) {
+      const v = r1.vMap.get(vk);
+      for (const tck of v.tcOrder) resultRowCount += v.tcMap.get(tck).resultOrder.length;
+    }
+  }
+  $('result-count').textContent = `${resultRowCount.toLocaleString()} rows`;
+
+  const reqN = reqCols.length + versCols.length;
+  const tcN  = tcCols.length;
 
   const h = ['<table>'];
 
   // ── thead row 1: group colour bands ──
   h.push('<thead><tr class="h-group">');
-  for (const g of ['req', 'tc', 'risk', 'sticr']) {
-    const n = visCols.filter(c => c.group === g).length;
-    if (n > 0) h.push(`<th class="${GROUP_META[g].cls}" colspan="${n}">${GROUP_META[g].label}</th>`);
-  }
+  if (reqN > 0) h.push(`<th class="g-req" colspan="${reqN}">Requirements</th>`);
+  if (tcN  > 0) h.push(`<th class="g-tc"  colspan="${tcN}">Test Cases</th>`);
+  if (hasRiskData)  h.push('<th class="g-risk"  colspan="1">Risks</th>');
+  if (hasSticrData) h.push('<th class="g-sticr" colspan="1">STICRs</th>');
   h.push('</tr>');
 
   // ── thead row 2: column names ──
   h.push('<tr class="h-cols">');
-  for (const c of visCols) h.push(`<th>${esc(c.label)}</th>`);
+  for (const c of [...reqCols, ...versCols, ...tcCols]) h.push(`<th>${esc(c.label)}</th>`);
+  if (hasRiskData)  h.push('<th>Risks</th>');
+  if (hasSticrData) h.push('<th>STICRs</th>');
   h.push('</tr></thead>');
 
-  // ── tbody: 3-level rowspan ──
-  // Column order per row:
-  //   [req cells (rowspan=r1Span, first row of req group only)]
-  //   [vers cell (rowspan=vSpan,  first row of vers group only)]
-  //   [TC + test-point leaf cells (every row)]
-  //   [risk cells (rowspan=rkSpan, first row of risk group only)]
-  //   [STICR leaf cells (every row)]
+  // ── tbody ──
+  // Column order: [req (rowspan=r1Span)] [vers (rowspan=vSpan)] [TC leaf (every row)]
+  //               [Risks expandable (rowspan=TC result count, first row only)]
+  //               [STICRs expandable (rowspan=TC result count, first row only)]
   h.push('<tbody>');
-  const { r1Map, r1Order } = buildGroups(data);
 
   r1Order.forEach((r1k, ri) => {
     const r1       = r1Map.get(r1k);
@@ -355,47 +400,76 @@ function render() {
 
     const r1Span = r1.vOrder.reduce((s, vk) => {
       const v = r1.vMap.get(vk);
-      return s + v.rkOrder.reduce((ss, rk) => ss + v.rkMap.get(rk).length, 0);
+      return s + v.tcOrder.reduce((ss, tck) => ss + v.tcMap.get(tck).resultOrder.length, 0);
     }, 0);
 
     r1.vOrder.forEach((vk, vi) => {
       const v     = r1.vMap.get(vk);
-      const vSpan = v.rkOrder.reduce((s, rk) => s + v.rkMap.get(rk).length, 0);
+      const vSpan = v.tcOrder.reduce((s, tck) => s + v.tcMap.get(tck).resultOrder.length, 0);
 
-      v.rkOrder.forEach((rk, rki) => {
-        const rows   = v.rkMap.get(rk);
-        const rkSpan = rows.length;
+      v.tcOrder.forEach((tck, tci) => {
+        const { resultMap, resultOrder, risks, sticrs } = v.tcMap.get(tck);
 
-        rows.forEach((row, li) => {
-          const isFirst = vi === 0 && rki === 0 && li === 0;
-          h.push(`<tr class="${rowClass}${isFirst ? ' grp-start' : ''}">`);
+        resultOrder.forEach((rk, li) => {
+          const row        = resultMap.get(rk);
+          const isFirstRow = vi === 0 && tci === 0 && li === 0;
+          h.push(`<tr class="${rowClass}${isFirstRow ? ' grp-start' : ''}">`);
 
-          // req-level: first row of (Req ID + Released in) group
-          if (vi === 0 && rki === 0 && li === 0) {
+          // Req-level: first row of req group
+          if (vi === 0 && tci === 0 && li === 0) {
             for (const c of reqCols) {
               h.push(`<td${c.sticky ? ' class="c-req"' : ''} rowspan="${r1Span}">${cellHtml(row, c)}</td>`);
             }
           }
 
-          // vers-level: first row of Reqmt for Version group
-          if (rki === 0 && li === 0) {
+          // Vers-level: first row of version group
+          if (tci === 0 && li === 0) {
             for (const c of versCols) {
               h.push(`<td rowspan="${vSpan}">${cellHtml(row, c)}</td>`);
             }
           }
 
-          // TC + test-point leaf: every row
-          for (const c of tcCols)    h.push(`<td>${cellHtml(row, c)}</td>`);
+          // TC leaf: every result row
+          for (const c of tcCols) h.push(`<td>${cellHtml(row, c)}</td>`);
 
-          // risk-level: first row of Risk ID group
-          if (li === 0) {
-            for (const c of riskCols) {
-              h.push(`<td rowspan="${rkSpan}">${cellHtml(row, c)}</td>`);
+          // Risks: expandable cell spanning all result rows for this TC
+          if (hasRiskData && li === 0) {
+            const rSpan = resultOrder.length;
+            if (!risks.length) {
+              h.push(`<td rowspan="${rSpan}"></td>`);
+            } else {
+              const items = risks.map(r => {
+                const link = r.url
+                  ? `<a class="lnk" href="${esc(r.url)}" target="_blank">${esc(r.id)} &#128279;</a>`
+                  : esc(r.id);
+                return `<div class="expand-item">${link}${r.name ? ` <span class="expand-meta">· ${esc(r.name)}</span>` : ''}</div>`;
+              }).join('');
+              h.push(`<td rowspan="${rSpan}" class="expand-cell"><details>` +
+                `<summary>${risks.length} risk${risks.length !== 1 ? 's' : ''}</summary>` +
+                `<div class="expand-list">${items}</div></details></td>`);
             }
           }
 
-          // STICR leaf: every row
-          for (const c of sticrCols) h.push(`<td>${cellHtml(row, c)}</td>`);
+          // STICRs: expandable cell spanning all result rows for this TC
+          if (hasSticrData && li === 0) {
+            const rSpan = resultOrder.length;
+            if (!sticrs.length) {
+              h.push(`<td rowspan="${rSpan}"></td>`);
+            } else {
+              const items = sticrs.map(s => {
+                const link = s.url
+                  ? `<a class="lnk" href="${esc(s.url)}" target="_blank">${esc(s.id)} &#128279;</a>`
+                  : esc(s.id);
+                const meta = [s.state, s.release].filter(Boolean).map(esc).join(' · ');
+                return `<div class="expand-item">${link}` +
+                  `${s.name ? ` <span class="expand-meta">· ${esc(s.name)}</span>` : ''}` +
+                  `${meta ? ` <span class="expand-meta">(${meta})</span>` : ''}</div>`;
+              }).join('');
+              h.push(`<td rowspan="${rSpan}" class="expand-cell"><details>` +
+                `<summary>${sticrs.length} STICR${sticrs.length !== 1 ? 's' : ''}</summary>` +
+                `<div class="expand-list">${items}</div></details></td>`);
+            }
+          }
 
           h.push('</tr>');
         });

@@ -221,3 +221,33 @@ a.lnk:hover { color: var(--gunmetal); text-decoration: underline; }
 .table-wrap::-webkit-scrollbar-track { background: var(--lavender-blush); border-radius: 10px; }
 .table-wrap::-webkit-scrollbar-thumb { background: var(--frosted-blue); border-radius: 10px; }
 .table-wrap::-webkit-scrollbar-thumb:hover { background: var(--strong-cyan); }
+
+/* ── Expandable risk / STICR cells ── */
+.expand-cell { vertical-align: top; min-width: 110px; max-width: 300px; }
+
+.expand-cell details summary {
+  cursor: pointer;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #2a9ba5;
+  user-select: none;
+  list-style: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 0;
+  white-space: nowrap;
+}
+.expand-cell details summary::-webkit-details-marker { display: none; }
+.expand-cell details summary::before {
+  content: '▶';
+  font-size: 8px;
+  display: inline-block;
+  transition: transform .15s;
+}
+.expand-cell details[open] summary::before { transform: rotate(90deg); }
+.expand-cell details summary:hover { color: var(--gunmetal); }
+
+.expand-list { margin-top: 6px; display: flex; flex-direction: column; gap: 4px; }
+.expand-item { font-size: 10.5px; line-height: 1.45; }
+.expand-meta { color: var(--muted); font-size: 10px; }
