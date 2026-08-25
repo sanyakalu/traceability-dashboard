@@ -638,27 +638,23 @@ $('btn-export').addEventListener('click', exportDocx);
 
 // ── Startup ───────────────────────────────────────────────────────────────────
 tryAutoLoadTemplate();
-const CACHE_KEY = 'tm_data', CACHE_TTL = 60 * 60 * 1000;
-const cached = JSON.parse(localStorage.getItem(CACHE_KEY) || 'null');
-if (cached && Date.now() - cached.ts < CACHE_TTL) {
-  ALL = cached.rows;
-  $('file-label').textContent = `Snowflake (cached)  ·  ${ALL.length.toLocaleString()} rows`;
-  populateOptions();
-  render();
-} else {
-  fetch('data.json')
-    .then(r => r.ok ? r.json() : Promise.reject())
-    .then(data => {
-      try { localStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), rows: data })); } catch (_) {}
-      ALL = data;
-      $('file-label').textContent = `Snowflake  ·  ${ALL.length.toLocaleString()} rows`;
-      populateOptions();
-      render();
-    })
-    .catch(() => {
-      fetch('traceability_matrix_alarm_panel.csv')
-        .then(r => r.ok ? r.blob() : Promise.reject())
-        .then(b => loadCsv(new File([b], 'traceability_matrix_alarm_panel.csv', { type: 'text/csv' })))
-        .catch(() => {});
-    });
-}
+
+fetch('data.json', { cache: 'no-store' })
+  .then(r => r.ok ? r.json() : Promise.reject())
+  .then(data => {
+    ALL = data;
+    $('file-label').textContent =
+      `Snowflake  ·  ${ALL.length.toLocaleString()} rows`;
+    populateOptions();
+    render();
+  })
+  .catch(() => {
+    fetch('traceability_matrix_alarm_panel.csv', { cache: 'no-store' })
+      .then(r => r.ok ? r.blob() : Promise.reject())
+      .then(b => loadCsv(new File(
+        [b],
+        'traceability_matrix_alarm_panel.csv',
+        { type: 'text/csv' }
+      )))
+      .catch(() => {});
+  });
