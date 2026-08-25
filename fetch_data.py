@@ -46,8 +46,7 @@ conn = snowflake.connector.connect(
 
 cur = conn.cursor()
 cur.execute(
-    'SELECT * FROM TRACEABILITY_MATRIX WHERE REQMT_FOR_VERSION = %s',
-    ('5.0',)
+    "SELECT * FROM TRACEABILITY_MATRIX WHERE REQMT_FOR_VERSION = '5.0.0'"
 )
 cols = [COLUMN_MAP[d[0]] for d in cur.description]
 
